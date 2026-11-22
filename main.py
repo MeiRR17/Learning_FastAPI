@@ -1,6 +1,8 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
+from typing import List, Optional
 
 from database import get_db, Item
 from schemas import ItemCreate, ItemResponse, ItemUpdate
@@ -17,14 +19,27 @@ def read_root():
     return {"message": "Welcome to FastAPI with Database!"}
 
 @app.get("/health")
-def health_check():
+def health_check(db: Session = Depends(get_db)):
+    """Report actual database connectivity, not an unconditional success."""
+    try:
+        db.execute(text("SELECT 1")).scalar_one()
+    except SQLAlchemyError:
+        raise HTTPException(status_code=503, detail="Database unavailable")
     return {"status": "healthy", "database": "connected"}
 
 # Item CRUD endpoints
 @app.get("/items/", response_model=List[ItemResponse])
-def read_items(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    items = db.query(Item).filter(Item.in_stock == True).offset(skip).limit(limit).all()
-    return items
+def read_items(
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=100, ge=1, le=100),
+    in_stock: Optional[bool] = None,
+    db: Session = Depends(get_db),
+):
+    """List all items by default, with deterministic paging and optional stock filter."""
+    query = db.query(Item)
+    if in_stock is not None:
+        query = query.filter(Item.in_stock == in_stock)
+    return query.order_by(Item.id).offset(skip).limit(limit).all()
 
 @app.get("/items/{item_id}", response_model=ItemResponse)
 def read_item(item_id: int, db: Session = Depends(get_db)):

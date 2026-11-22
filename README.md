@@ -27,14 +27,14 @@ The server will start on `http://localhost:8000`
 ## API Endpoints
 
 ### Items
-- `GET /items/` - List all available items
+- `GET /items/` - List all items, with optional `in_stock=true|false` filter and bounded pagination (`skip`, `limit`)
 - `GET /items/{item_id}` - Get specific item
 - `POST /items/` - Create new item
 - `PUT /items/{item_id}` - Update item
 - `DELETE /items/{item_id}` - Delete item
 
 ### System
-- `GET /health` - Health check with database status
+- `GET /health` - Executes a real database query; returns HTTP 503 if SQLite is unavailable
 - `GET /` - Welcome message
 
 ## API Documentation
@@ -78,3 +78,16 @@ curl -X PUT "http://localhost:8000/items/1" \
 ```bash
 curl -X DELETE "http://localhost:8000/items/1"
 ```
+
+## Safer CRUD behavior (development branch)
+
+The API accepts only nonblank item names of up to 120 characters, descriptions of up to 2,000 characters, and **non-negative finite prices**. New items may specify `in_stock` (default `true`). Partial `PUT /items/{item_id}` updates can omit fields; explicit JSON `null` is rejected for `name`, `price` and `in_stock`, rather than persisting values that break the response schema. An optional description can be cleared with `null`.
+
+`GET /items/` lists **all** items by default, including out-of-stock items. Use `?in_stock=true` or `?in_stock=false` to filter. Pagination uses `skip=0` or greater and `limit=1..100`; it always orders by item ID so results are stable across requests. Invalid input produces the usual FastAPI/Pydantic 422 validation response.
+
+```bash
+curl "http://localhost:8000/items/?in_stock=false&skip=0&limit=25"
+curl "http://localhost:8000/health"
+```
+
+The health endpoint now performs a real `SELECT 1` through SQLAlchemy and returns HTTP 503 when that query fails. This detects connectivity/query failures, not data consistency or general application readiness. The project is still an educational SQLite example, not a production-authenticated inventory service. This branch is awaiting owner-led testing and has not been merged.
